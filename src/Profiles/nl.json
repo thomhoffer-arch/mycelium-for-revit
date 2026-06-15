@@ -2,8 +2,9 @@
   "id": "nl",
   "doorClearWidthParams": [
     "NLRS_C_breedte_01",
-    "NLRS_C_doorgangsbreedte",
-    "Breedte"
+    "breedte_01",
+    "clear_width",
+    "width"
   ],
   "roomFunctionParams": [
     "function",

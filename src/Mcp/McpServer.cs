@@ -24,7 +24,11 @@ namespace Loam.Revit.Connector.Mcp
 
         public McpServer(string prefix, string token, RevitContext ctx, Profile profile)
         {
-            _prefix = prefix.EndsWith("/") ? prefix : prefix + "/";
+            // Listen at the host root so both /mcp and /mcp/ (and any subpath) reach us.
+            // HttpListener prefix matching is strict on the trailing slash, and Loam's
+            // documented default URL has no trailing slash (LOAM_REVIT_URL=…:47100/mcp).
+            var u = new Uri(prefix);
+            _prefix = $"{u.Scheme}://{u.Host}:{u.Port}/";
             _token = string.IsNullOrEmpty(token) ? null : token;
             _ctx = ctx;
             _tools = new Dictionary<string, IMcpTool>
