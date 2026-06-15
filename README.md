@@ -7,11 +7,13 @@ This repository will implement a **model source** for Autodesk Revit, exposing R
 ## Status: Early Stage
 - **1 commit**: Contract defined, implementation pending.
 - **Target**: Expose the following 5 primitives (aligned with PDRA):
-  1. `getModelRevision` — Returns the current Revit model revision.
-  2. `filterElementsByScopeBox` — Filters Revit elements by a scope box.
-  3. `getElementsByUniqueId` — Retrieves elements by Revit UniqueId.
-  4. `getElementsByIfcGuid` — Retrieves elements by IFC GUID.
-  5. `getDoorRooms` — Retrieves door-room relationships.
+  1. `get_model_revision` — Returns the current Revit model revision.
+  2. `filter_elements_by_scope_box` — Filters Revit elements by a scope box.
+  3. `get_element_by_uniqueid` — Retrieves an element by Revit UniqueId *(singular)*.
+  4. `get_element_by_ifcguid` — Retrieves an element by IFC GUID *(singular)*.
+  5. `get_door_rooms` — Retrieves door-room relationships.
+
+> **Note**: Tool names are **snake_case** (wire format), not camelCase. The camelCase names are Loam's internal method names and are not used on the wire.
 
 ---
 
@@ -21,9 +23,16 @@ This repository will implement a **model source** for Autodesk Revit, exposing R
 
 ---
 
+## Contract
+The full **Revit Model Source Contract** (including request/response JSON shapes, endpoint, and field names) is defined in:
+👉 [Loam: `docs/connectors/REVIT_MODEL_SOURCE_CONTRACT.md`](https://github.com/thomhoffer-arch/Loam/blob/main/docs/connectors/REVIT_MODEL_SOURCE_CONTRACT.md)
+
+---
+
 ## Compatibility
 - **Spine Version**: `v0.1` (see [Mycelium](https://github.com/thomhoffer-arch/Mycelium)).
 - **Orchestrator**: Designed for [Loam](https://github.com/thomhoffer-arch/Loam).
+- **Endpoint**: `http://127.0.0.1:47100/mcp` (optional bearer auth).
 
 ---
 
