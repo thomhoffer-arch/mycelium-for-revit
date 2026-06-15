@@ -2,7 +2,9 @@
 
 A **Revit model source** for the [Loam](https://github.com/thomhoffer-arch/Loam) orchestrator. Exposes Revit data over **MCP** so Loam can build spine records — the connector itself does **not** emit spine records and does **not** maintain a provenance ledger.
 
-Authoritative wire contract: [REVIT_MODEL_SOURCE_CONTRACT.md](https://github.com/thomhoffer-arch/loam/blob/main/docs/connectors/REVIT_MODEL_SOURCE_CONTRACT.md) (Loam) — `docs/CONTRACT.md` in this repo is a local mirror.
+The five Revit ops are **PDRA's implementations verbatim** (vendored under `src/Pdra/`). One contract, one implementation, two front-ends (PDRA and this connector).
+
+Authoritative wire contract: [REVIT_MODEL_SOURCE_CONTRACT.md](https://github.com/thomhoffer-arch/loam/blob/main/docs/connectors/REVIT_MODEL_SOURCE_CONTRACT.md) (Loam) — `docs/CONTRACT.md` here is a local mirror. See `ROADMAP.md` for what's done / next / out-of-scope.
 
 ---
 
@@ -14,48 +16,59 @@ Defaults:
 
 | env var | default |
 |---|---|
-| `LOAM_REVIT_LISTEN` | `http://127.0.0.1:47100/mcp/` |
+| `LOAM_REVIT_LISTEN` | `http://127.0.0.1:47100/mcp` |
 | `LOAM_REVIT_TOKEN`  | _unset = no auth_ |
 
-Tools — names are **snake_case wire names** and shapes are part of the contract; do not rename without coordinating with Loam:
+The five tools — snake_case wire names, dispatched to PDRA's `IPdraTool` implementations:
 
-1. `get_model_revision` → `{ version_guid, number_of_saves, has_unsaved_changes }`
-2. `filter_elements_by_scope_box(scope_box_id, category, inside_only)` → `{ count_in, elements: [...] }`
-3. `get_element_by_uniqueid(unique_ids[])` → `{ elements: [...] }` (misses returned as `found: false`)
-4. `get_element_by_ifcguid(ifc_guids[])` → `{ elements: [...] }` (only `found: true` rows — stricter than #3)
-5. `get_door_rooms(element_ids[], scope_box_id?, limit?)` → `{ doors: [...] }`
+1. `get_model_revision`
+2. `filter_elements_by_scope_box`
+3. `get_element_by_uniqueid`
+4. `get_element_by_ifcguid`
+5. `get_door_rooms`
 
-Full field-level reference: `docs/CONTRACT.md`.
-
-### Identity
-
-- `unique_id` — **primary**, stable across saves (Revit `UniqueId`).
-- `id` — numeric `ElementId`, volatile but **required** by `get_door_rooms`.
-- `ifc_guid` — fallback identity (parameter `IfcGUID`).
-
-### Profiles
-
-Firm-specific parameter names (door clear width, room function, classification code) live in `src/Profiles/*.json`. The default is `nl.json` (NL-SfB, NLRS). Swap profiles per firm; the tool field names follow the profile.
+PDRA names the tools `pdra_get_model_revision` etc. internally; the MCP listener accepts **both** forms but advertises the unprefixed contract names via `tools/list`.
 
 ---
 
-## Build & install
+## Build
 
-Prereqs: Visual Studio 2022, Revit 2024 SDK on disk (default `C:\Program Files\Autodesk\Revit 2024`).
+Multi-targeted: `net48` for Revit 2024, `net8.0-windows` for Revit 2025/2026. From repo root:
 
+```powershell
+# Revit 2024 (.NET Framework 4.8)
+dotnet build .\LoamRevitConnector.sln -c Release -f net48 -p:RevitVersion=2024
+
+# Revit 2025 (.NET 8)
+dotnet build .\LoamRevitConnector.sln -c Release -f net8.0-windows -p:RevitVersion=2025
+
+# Revit 2026 (.NET 8)
+dotnet build .\LoamRevitConnector.sln -c Release -f net8.0-windows -p:RevitVersion=2026
 ```
-dotnet build LoamRevitConnector.sln -c Release
+
+Override the API path if Revit isn't at the default location:
+```powershell
+-p:RevitApiDir="D:\Autodesk\Revit 2025"
 ```
 
-Copy `LoamRevitConnector.dll`, `Newtonsoft.Json.dll`, `Profiles\nl.json`, and `LoamRevitConnector.addin` to:
+Prereqs: .NET SDK 8+ with the **.NET Framework 4.8 Developer Pack** (for 2024 builds), and `RevitAPI.dll` / `RevitAPIUI.dll` present in the per-version Revit install dir (they ship with Revit; not redistributable).
 
-```
-%APPDATA%\Autodesk\Revit\Addins\2024\
+## Install
+
+Copy the build output into the version-matching add-in folder:
+
+```powershell
+$year = "2025"  # or 2024 / 2026
+$tfm  = if ($year -eq "2024") { "net48" } else { "net8.0-windows" }
+$dst  = "$env:APPDATA\Autodesk\Revit\Addins\$year"
+New-Item -ItemType Directory -Force $dst | Out-Null
+Copy-Item -Recurse -Force .\src\bin\Release\$tfm\* $dst
 ```
 
 Launch Revit; the MCP server starts on port 47100. Point Loam at it:
 
 ```
+LOAM_MODEL_SOURCE=revit-connector
 LOAM_REVIT_URL=http://127.0.0.1:47100/mcp
 ```
 
@@ -65,27 +78,28 @@ LOAM_REVIT_URL=http://127.0.0.1:47100/mcp
 
 ```
 src/
-  App.cs                      # IExternalApplication entry — boots MCP server
+  App.cs                            # IExternalApplication entry — boots MCP server
   Mcp/
-    McpServer.cs              # HttpListener + JSON-RPC dispatcher
-    JsonRpc.cs                # request/response/tool-result types
-    Tools/
-      GetModelRevision.cs
-      FilterElementsByScopeBox.cs
-      GetElementByUniqueId.cs
-      GetElementByIfcGuid.cs
-      GetDoorRooms.cs
+    McpServer.cs                    # HttpListener + JSON-RPC dispatcher → IPdraTool
   RevitBridge/
-    RevitContext.cs           # ExternalEvent marshalling to UI thread
-    ElementMapper.cs          # Revit Element -> Loam DTO
-  Profiles/
-    Profile.cs
-    nl.json                   # NL-SfB / NLRS defaults
+    RevitContext.cs                 # ExternalEvent marshalling to UI thread
+  Pdra/                             # PDRA main @ 9df8a97 — VERBATIM, do not fork
+    IPdraTool.cs / ToolMetadata.cs / PdraJson.cs / JsonHelpers.cs
+    SpineKeys.cs / ElementContextReader.cs
+    Tools/
+      GetModelRevisionTool.cs
+      FilterElementsByScopeBoxTool.cs
+      GetElementByUniqueIdTool.cs
+      GetElementByIfcGuidTool.cs
+      GetDoorRoomsTool.cs
   LoamRevitConnector.addin
   LoamRevitConnector.csproj
 docs/
-  CONTRACT.md                 # field-level Loam contract reference (mirror)
+  CONTRACT.md                       # field-level Loam contract reference (mirror)
+ROADMAP.md
 ```
+
+Files under `src/Pdra/` are PDRA `main` verbatim — bug fixes go upstream to PDRA, then re-vendor here. Don't fork in-tree.
 
 ---
 
@@ -93,5 +107,5 @@ docs/
 
 - [Loam (orchestrator)](https://github.com/thomhoffer-arch/Loam)
 - [Mycelium (Connective Spine)](https://github.com/thomhoffer-arch/Mycelium)
-- [PDRA (Revit MCP tools — reference)](https://github.com/thomhoffer-arch/PDRA)
+- [PDRA (Revit MCP tools — source of `src/Pdra/`)](https://github.com/thomhoffer-arch/PDRA)
 - [Full contract spec (REVIT_MODEL_SOURCE_CONTRACT.md)](https://github.com/thomhoffer-arch/loam/blob/main/docs/connectors/REVIT_MODEL_SOURCE_CONTRACT.md)

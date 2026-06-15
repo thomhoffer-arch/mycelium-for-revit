@@ -2,43 +2,55 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using Loam.Revit.Connector.Mcp.Tools;
-using Loam.Revit.Connector.Profiles;
 using Loam.Revit.Connector.RevitBridge;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using PDRA.Services.Ai.Tools;
+using PDRA.Services.Ai.Tools.Queries;
 
 namespace Loam.Revit.Connector.Mcp
 {
     /// MCP server: JSON-RPC over Streamable HTTP. Implements `initialize`,
-    /// `tools/list`, and `tools/call` for the 5 Loam contract tools.
-    public class McpServer
+    /// `tools/list`, and `tools/call`. Dispatches to PDRA's IPdraTool
+    /// implementations — those are the canonical Revit ops; this class only
+    /// owns the wire framing and the Revit UI-thread marshalling.
+    public sealed class McpServer
     {
         private readonly string _prefix;
         private readonly string _token;
         private readonly RevitContext _ctx;
-        private readonly Dictionary<string, IMcpTool> _tools;
+        private readonly Dictionary<string, IPdraTool> _tools;
         private HttpListener _listener;
         private bool _running;
 
-        public McpServer(string prefix, string token, RevitContext ctx, Profile profile)
+        public McpServer(string listenUrl, string token, RevitContext ctx)
         {
-            // Listen at the host root so both /mcp and /mcp/ (and any subpath) reach us.
+            // Listen at host root so both /mcp and /mcp/ (and any subpath) hit us.
             // HttpListener prefix matching is strict on the trailing slash, and Loam's
-            // documented default URL has no trailing slash (LOAM_REVIT_URL=…:47100/mcp).
-            var u = new Uri(prefix);
+            // default URL has none (LOAM_REVIT_URL=…:47100/mcp).
+            var u = new Uri(listenUrl);
             _prefix = $"{u.Scheme}://{u.Host}:{u.Port}/";
             _token = string.IsNullOrEmpty(token) ? null : token;
             _ctx = ctx;
-            _tools = new Dictionary<string, IMcpTool>
+
+            // PDRA tool names ship prefixed (e.g. "pdra_get_model_revision").
+            // Loam dials the unprefixed contract names — expose both, keyed by
+            // contract name with the PDRA name as an alias.
+            _tools = new Dictionary<string, IPdraTool>(StringComparer.Ordinal);
+            foreach (var t in new IPdraTool[]
             {
-                ["get_model_revision"]            = new GetModelRevisionTool(ctx),
-                ["filter_elements_by_scope_box"]  = new FilterElementsByScopeBoxTool(ctx, profile),
-                ["get_element_by_uniqueid"]       = new GetElementByUniqueIdTool(ctx, profile),
-                ["get_element_by_ifcguid"]        = new GetElementByIfcGuidTool(ctx, profile),
-                ["get_door_rooms"]                = new GetDoorRoomsTool(ctx, profile),
-            };
+                new GetModelRevisionTool(),
+                new FilterElementsByScopeBoxTool(),
+                new GetElementByUniqueIdTool(),
+                new GetElementByIfcGuidTool(),
+                new GetDoorRoomsTool(),
+            })
+            {
+                _tools[t.Name] = t;                       // pdra_*
+                _tools[Strip(t.Name)] = t;                // contract name
+            }
         }
 
         public void Start()
@@ -53,17 +65,17 @@ namespace Loam.Revit.Connector.Mcp
         public void Stop()
         {
             _running = false;
-            try { _listener?.Stop(); } catch { }
+            try { _listener?.Stop(); } catch { /* listener already disposed */ }
         }
 
         private async Task AcceptLoop()
         {
             while (_running)
             {
-                HttpListenerContext ctx;
-                try { ctx = await _listener.GetContextAsync(); }
+                HttpListenerContext http;
+                try { http = await _listener.GetContextAsync(); }
                 catch { return; }
-                _ = Task.Run(() => Handle(ctx));
+                _ = Task.Run(() => Handle(http));
             }
         }
 
@@ -71,7 +83,7 @@ namespace Loam.Revit.Connector.Mcp
         {
             try
             {
-                if (_token != null)
+                if (_token is not null)
                 {
                     var auth = http.Request.Headers["Authorization"];
                     if (auth != "Bearer " + _token)
@@ -81,7 +93,6 @@ namespace Loam.Revit.Connector.Mcp
                         return;
                     }
                 }
-
                 if (http.Request.HttpMethod != "POST")
                 {
                     http.Response.StatusCode = 405;
@@ -91,11 +102,9 @@ namespace Loam.Revit.Connector.Mcp
 
                 using var reader = new StreamReader(http.Request.InputStream);
                 var body = reader.ReadToEnd();
-                var req = JsonConvert.DeserializeObject<JsonRpcRequest>(body);
-                var resp = Dispatch(req);
+                var respJson = Dispatch(body);
 
-                var json = JsonConvert.SerializeObject(resp);
-                var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+                var bytes = Encoding.UTF8.GetBytes(respJson);
                 http.Response.ContentType = "application/json";
                 http.Response.ContentLength64 = bytes.Length;
                 http.Response.OutputStream.Write(bytes, 0, bytes.Length);
@@ -109,67 +118,113 @@ namespace Loam.Revit.Connector.Mcp
                     using var sw = new StreamWriter(http.Response.OutputStream);
                     sw.Write(ex.Message);
                 }
-                catch { }
+                catch { /* response already disposed */ }
                 http.Response.Close();
             }
         }
 
-        private JsonRpcResponse Dispatch(JsonRpcRequest req)
+        private string Dispatch(string body)
         {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var id   = root.TryGetProperty("id", out var idEl) ? JsonNode.Parse(idEl.GetRawText()) : null;
+            var method = root.TryGetProperty("method", out var mEl) ? mEl.GetString() : null;
+
             try
             {
-                switch (req.Method)
+                return method switch
                 {
-                    case "initialize":
-                        return Ok(req.Id, new
-                        {
-                            protocolVersion = "2024-11-05",
-                            capabilities = new { tools = new { } },
-                            serverInfo = new { name = "loam-revit-connector", version = "0.1.0" }
-                        });
-
-                    case "tools/list":
-                        return Ok(req.Id, new { tools = ToolListing() });
-
-                    case "tools/call":
-                        var name = req.Params?["name"]?.ToString();
-                        var args = req.Params?["arguments"] as JObject ?? new JObject();
-                        if (name == null || !_tools.TryGetValue(name, out var tool))
-                            return Err(req.Id, -32601, "Unknown tool: " + name);
-                        var payload = tool.Invoke(args);
-                        return Ok(req.Id, new ToolCallResult
-                        {
-                            Content = new[] { new ToolContent { Text = JsonConvert.SerializeObject(payload) } }
-                        });
-
-                    default:
-                        return Err(req.Id, -32601, "Method not found: " + req.Method);
-                }
+                    "initialize" => Ok(id, new JsonObject
+                    {
+                        ["protocolVersion"] = "2024-11-05",
+                        ["capabilities"]    = new JsonObject { ["tools"] = new JsonObject() },
+                        ["serverInfo"]      = new JsonObject { ["name"] = "loam-revit-connector", ["version"] = "0.2.0" },
+                    }),
+                    "tools/list" => Ok(id, new JsonObject { ["tools"] = BuildToolListing() }),
+                    "tools/call" => CallTool(id, root),
+                    _            => Err(id, -32601, "Method not found: " + method),
+                };
             }
             catch (Exception ex)
             {
-                return Err(req.Id, -32603, ex.Message);
+                return Err(id, -32603, ex.Message);
             }
         }
 
-        private object[] ToolListing()
+        private string CallTool(JsonNode id, JsonElement root)
         {
-            var list = new List<object>();
-            foreach (var kv in _tools)
-                list.Add(new { name = kv.Key, description = kv.Value.Description, inputSchema = kv.Value.InputSchema });
-            return list.ToArray();
+            if (!root.TryGetProperty("params", out var p))
+                return Err(id, -32602, "Missing params.");
+            var name = p.TryGetProperty("name", out var nEl) ? nEl.GetString() : null;
+            if (name is null || !_tools.TryGetValue(name, out var tool))
+                return Err(id, -32601, "Unknown tool: " + name);
+
+            var args = p.TryGetProperty("arguments", out var aEl) && aEl.ValueKind == JsonValueKind.Object
+                ? JsonDocument.Parse(aEl.GetRawText())
+                : JsonDocument.Parse("{}");
+
+            ToolResult result;
+            try
+            {
+                result = _ctx.Run(uiApp => tool.Run(new ToolContext(uiApp), args.RootElement));
+            }
+            finally
+            {
+                args.Dispose();
+            }
+
+            // PDRA's ToolResult.Text is already a JSON string — pass through as content[0].text.
+            var content = new JsonArray
+            {
+                new JsonObject { ["type"] = "text", ["text"] = result.Text },
+            };
+            var payload = new JsonObject { ["content"] = content };
+            if (result.IsError) payload["isError"] = true;
+            return Ok(id, payload);
         }
 
-        private static JsonRpcResponse Ok(JToken id, object result) =>
-            new JsonRpcResponse { Id = id, Result = result };
-        private static JsonRpcResponse Err(JToken id, int code, string msg) =>
-            new JsonRpcResponse { Id = id, Error = new JsonRpcError { Code = code, Message = msg } };
-    }
+        private JsonArray BuildToolListing()
+        {
+            // Advertise the contract names (unprefixed) so Loam's client uses those.
+            // Each is the same underlying IPdraTool — the dispatch table accepts both.
+            var seen = new HashSet<IPdraTool>();
+            var list = new JsonArray();
+            foreach (var tool in _tools.Values)
+            {
+                if (!seen.Add(tool)) continue;
+                list.Add(new JsonObject
+                {
+                    ["name"]        = Strip(tool.Name),
+                    ["description"] = tool.Description,
+                    ["inputSchema"] = JsonNode.Parse(tool.InputSchema.ToJsonString()),
+                });
+            }
+            return list;
+        }
 
-    public interface IMcpTool
-    {
-        string Description { get; }
-        object InputSchema { get; }
-        object Invoke(JObject args);
+        private static string Strip(string name) =>
+            name.StartsWith("pdra_", StringComparison.Ordinal) ? name.Substring(5) : name;
+
+        private static string Ok(JsonNode id, JsonNode result)
+        {
+            var resp = new JsonObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"]      = id?.DeepClone(),
+                ["result"]  = result,
+            };
+            return resp.ToJsonString();
+        }
+
+        private static string Err(JsonNode id, int code, string msg)
+        {
+            var resp = new JsonObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"]      = id?.DeepClone(),
+                ["error"]   = new JsonObject { ["code"] = code, ["message"] = msg },
+            };
+            return resp.ToJsonString();
+        }
     }
 }
