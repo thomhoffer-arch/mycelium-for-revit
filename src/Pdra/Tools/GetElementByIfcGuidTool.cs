@@ -22,6 +22,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "ClashControl clash's globalIdA/globalIdB into the corresponding Revit element.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => new JsonObject
         {

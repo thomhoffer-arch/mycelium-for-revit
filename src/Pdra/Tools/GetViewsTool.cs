@@ -23,6 +23,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "level object when one is associated. Supports limit and fields.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => new JsonObject
         {

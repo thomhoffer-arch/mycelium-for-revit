@@ -26,6 +26,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "inside_only=true to return only the members.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => new JsonObject
         {
