@@ -26,6 +26,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "large models, pair with element_limit. Filter to one sheet via sheet_number.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => new JsonObject
         {

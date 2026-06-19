@@ -28,6 +28,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "to_room {id, name, number, level_name, params} and resolution = from_to_room | geometric | none.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => new JsonObject
         {

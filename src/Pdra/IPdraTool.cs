@@ -20,17 +20,15 @@ namespace PDRA.Services.Ai.Tools
 
         ToolResult Run(ToolContext ctx, JsonElement args);
 
-        /// <summary>How recoverable this tool's effect is. Default: ModelOnly
-        /// (writes to the document; undoable). Read-only queries should override
-        /// to <see cref="Reversibility.Reversible"/>; tools that write a file or
-        /// export should override to <see cref="Reversibility.External"/>.</summary>
-        Reversibility Reversibility => Reversibility.ModelOnly;
+        /// <summary>How recoverable this tool's effect is. Read-only queries return
+        /// <see cref="Reversibility.Reversible"/>; document writes return ModelOnly;
+        /// file exports return <see cref="Reversibility.External"/>.</summary>
+        Reversibility Reversibility { get; }
 
-        /// <summary>How this tool's outcome can be verified. Default: Auto
-        /// (manifest self-check). View-affecting tools whose correctness is only
-        /// visible in a rendered image should override to <see cref="Verifiability.Render"/>.
-        /// Tools with subjective outcomes (naming, layout) → <see cref="Verifiability.Human"/>.</summary>
-        Verifiability Verifiability => Verifiability.Auto;
+        /// <summary>How this tool's outcome can be verified. Most tools return Auto
+        /// (manifest self-check). View-affecting tools return Render; tools with
+        /// subjective outcomes return Human.</summary>
+        Verifiability Verifiability { get; }
     }
 
     public sealed record ToolContext(UIApplication UiApp);

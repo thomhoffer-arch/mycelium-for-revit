@@ -27,6 +27,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "when present; found=false for ids with no match.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => new JsonObject
         {

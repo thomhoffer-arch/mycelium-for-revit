@@ -21,6 +21,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "that link, so you can join cross-link element results without ambiguity.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => JsonHelpers.EmptyObjectSchema();
 

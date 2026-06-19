@@ -21,6 +21,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "include_unplaced=true to include them. Supports limit and fields filtering.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => new JsonObject
         {

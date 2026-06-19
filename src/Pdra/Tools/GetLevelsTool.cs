@@ -19,6 +19,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "pdra_filter_elements_by_scope_box or pdra_get_rooms.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => JsonHelpers.EmptyObjectSchema();
 

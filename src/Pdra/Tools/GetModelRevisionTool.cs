@@ -19,6 +19,7 @@ namespace PDRA.Services.Ai.Tools.Queries
             "has_unsaved_changes flags in-session edits that the guid does not yet reflect.";
 
         public Reversibility Reversibility => Reversibility.Reversible;
+        public Verifiability Verifiability => Verifiability.Auto;
 
         public JsonNode InputSchema => JsonHelpers.EmptyObjectSchema();
 
