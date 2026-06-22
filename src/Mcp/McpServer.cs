@@ -25,6 +25,11 @@ namespace Loam.Revit.Connector.Mcp
         private HttpListener _listener;
         private bool _running;
 
+        /// <summary>True when this instance successfully claimed the HTTP port.
+        /// False when another Revit instance already owns it — the add-in loads
+        /// silently and the first instance continues serving MCP requests.</summary>
+        public bool IsListening { get; private set; }
+
         public McpServer(string listenUrl, string token, RevitContext ctx)
         {
             // Listen at host root so both /mcp and /mcp/ (and any subpath) hit us.
@@ -63,7 +68,17 @@ namespace Loam.Revit.Connector.Mcp
         {
             _listener = new HttpListener();
             _listener.Prefixes.Add(_prefix);
-            _listener.Start();
+            try
+            {
+                _listener.Start();
+            }
+            catch (HttpListenerException ex) when (ex.ErrorCode == 32 || ex.ErrorCode == 183)
+            {
+                // Another Revit instance already owns the port — load silently.
+                _listener = null;
+                return;
+            }
+            IsListening = true;
             _running = true;
             Task.Run(AcceptLoop);
         }
@@ -71,7 +86,8 @@ namespace Loam.Revit.Connector.Mcp
         public void Stop()
         {
             _running = false;
-            try { _listener?.Stop(); } catch { /* listener already disposed */ }
+            if (_listener is null) return;
+            try { _listener.Stop(); } catch { /* listener already disposed */ }
         }
 
         private async Task AcceptLoop()
