@@ -70,7 +70,7 @@ foreach ($version in $detected) {
     Write-Host "==> Installing to $addinDir" -ForegroundColor Cyan
     New-Item -ItemType Directory -Force $addinDir | Out-Null
     Expand-Archive -Force -Path $zipPath -DestinationPath $addinDir
-    Write-Host "    Revit $version: done." -ForegroundColor Green
+    Write-Host "    Revit ${version}: done." -ForegroundColor Green
 }
 
 Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
