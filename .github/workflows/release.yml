@@ -67,18 +67,20 @@ jobs:
           draft: false
           prerelease: false
           body: |
-            ## Installation
+            ## One-click install
 
-            1. Download the ZIP for your Revit version
-            2. Extract the contents into your Revit add-ins folder:
-               - **Revit 2024**: `%APPDATA%\Autodesk\Revit\Addins\2024\`
-               - **Revit 2025**: `%APPDATA%\Autodesk\Revit\Addins\2025\`
-               - **Revit 2026**: `%APPDATA%\Autodesk\Revit\Addins\2026\`
-            3. Open Revit and a project — the MCP server starts automatically
-            4. Register the server in Claude Desktop or Claude Code:
-               - URL: `http://127.0.0.1:47100/mcp`
+            1. Download **`install.ps1`** below
+            2. Right-click it → **Run with PowerShell**
 
-            If multiple Revit instances are open, only the first one serves MCP requests.
+            The script auto-detects Revit 2024/2025/2026, downloads and installs
+            the connector for each version found, and registers the MCP server in
+            Claude Desktop and Claude Code.
+
+            **MCP URL:** `http://127.0.0.1:47100/mcp`
+
+            If multiple Revit instances are open simultaneously, only the first one
+            serves MCP requests — subsequent instances load silently.
           files: |
+            install.ps1
             loam-revit-connector-revit2024.zip
             loam-revit-connector-revit2025-2026.zip
