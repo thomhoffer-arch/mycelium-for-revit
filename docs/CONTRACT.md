@@ -38,10 +38,23 @@ Freshness stamp. `has_unsaved_changes: true` warns that the cloud copy may not r
 Request: `{}`
 
 ```json
-{ "name": "string", "number": "string", "client": "string", "address": "string", "building": "string" }
+{
+  "name":     "string",
+  "number":   "string",
+  "client":   "string",
+  "address":  "string",
+  "building": "string",
+  "title":    "string",
+  "path":     "string"
+}
 ```
 
-Source: `Document.ProjectInformation`. Only `name` + `number` are required; rest are optional. Mycelium Studio uses these to auto-seed the project — if absent, it degrades to learning the project from mail.
+- `name` / `number` — from `Document.ProjectInformation`. `name` falls back to `title` when `ProjectInformation.Name` is empty, so a blank-ProjectInformation model still self-identifies.
+- `title` — `Document.Title` (always populated; the `.rvt` filename without extension).
+- `path` — `Document.PathName` (always populated; full file path or cloud model path).
+- `client` / `address` / `building` — optional context from `ProjectInformation`.
+
+Mycelium Studio uses these to auto-seed the project — if absent, it degrades to learning the project from mail.
 
 ---
 
