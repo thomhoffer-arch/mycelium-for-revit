@@ -115,6 +115,13 @@ namespace Loam.Revit.Connector.Mcp
                         return;
                     }
                 }
+                if (http.Request.HttpMethod == "GET")
+                {
+                    // Health check — connector is up and listening.
+                    http.Response.StatusCode = 200;
+                    http.Response.Close();
+                    return;
+                }
                 if (http.Request.HttpMethod != "POST")
                 {
                     http.Response.StatusCode = 405;
@@ -160,7 +167,7 @@ namespace Loam.Revit.Connector.Mcp
                     {
                         ["protocolVersion"] = "2024-11-05",
                         ["capabilities"]    = new JsonObject { ["tools"] = new JsonObject() },
-                        ["serverInfo"]      = new JsonObject { ["name"] = "loam-revit-connector", ["version"] = "0.2.0" },
+                        ["serverInfo"]      = new JsonObject { ["name"] = "mycelium-revit-connector", ["version"] = "0.2.0" },
                     }),
                     "tools/list" => Ok(id, new JsonObject { ["tools"] = BuildToolListing() }),
                     "tools/call" => CallTool(id, root),
